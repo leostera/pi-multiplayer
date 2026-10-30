@@ -11,15 +11,34 @@
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable";
 
 export type ClientRequest =
-  | { id: number; op: "submit"; requestId: string; content: string; whenBusy: Delivery }
+  | { id: number; op: "submit"; requestId: string; author: string; content: string; whenBusy: Delivery }
   | { id: number; op: "abort" };
 
 export type HostMessage =
-  /** `tools`: the names of the tools the conversation offers, so Pi can stand in for each. */
-  | { type: "snapshot"; snapshot: SnapshotEvent; tools: string[] }
+  | { type: "snapshot"; snapshot: SnapshotEvent; session: SessionInfo }
   | { type: "events"; events: readonly AgentEvent[] }
   | { type: "reply"; id: number; ok: true; result: SubmitResult | null }
   | { type: "reply"; id: number; ok: false; error: string };
+
+/** What a client shows about the session it attached to. */
+export interface SessionInfo {
+  /** The agent's display name. */
+  agent: string;
+  /** `provider/id` of the agent's model. */
+  model: string;
+  /** The tools the conversation offers, so Pi can stand in for each. */
+  tools: string[];
+}
+
+/**
+ * Inputs are placed as this entry kind, with who wrote them. The model sees `author: text`, so
+ * in a shared session it knows who is asking.
+ */
+export const MESSAGE_KIND = "axo.message";
+export interface MessageData {
+  author: string;
+  text: string;
+}
 
 /** How a busy conversation takes the input: after the current tool round, or once the run answers. */
 export type Delivery = "steer" | "followUp";

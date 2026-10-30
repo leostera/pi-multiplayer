@@ -26,6 +26,8 @@ import {
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { serveConversation, type DurableHost } from "../src/host.ts";
+import { connectConversation } from "../src/client.ts";
+import { MESSAGE_KIND } from "../src/protocol.ts";
 import { createDurableClientExtension, MODEL, PROVIDER } from "../src/extension.ts";
 
 interface World {
@@ -74,13 +76,15 @@ beforeEach(async () => {
   );
   const model = faux.getModel();
   const root = await harness.root(context, { agent: { model: { provider: model.provider, modelId: model.id }, cwd: dir } });
-  const host = await serveConversation(harness, root, join("/tmp", `pdc-${process.pid}-${Math.random().toString(36).slice(2)}.sock`));
+  const host = await serveConversation(harness, root, join("/tmp", `pdc-${process.pid}-${Math.random().toString(36).slice(2)}.sock`), {
+    agentName: "pal",
+  });
 
   const agentDir = join(dir, "agent");
   const resourceLoader = new DefaultResourceLoader({
     cwd: dir,
     agentDir,
-    extensionFactories: [createDurableClientExtension({ socketPath: host.socketPath })],
+    extensionFactories: [createDurableClientExtension({ socketPath: host.socketPath, author: "alice" })],
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
@@ -114,12 +118,16 @@ afterEach(async () => {
 const respond = (...steps: FauxResponseStep[]) => world.faux.setResponses(steps);
 
 function transcript(session: AgentSession) {
-  return session.messages.filter(message => message.role !== "system").map(message => {
+  // What Pi shows: its system message and hidden custom messages are not drawn.
+  const shown = session.messages.filter(message => message.role !== "system" && !(message.role === "custom" && !message.display));
+  return shown.map(message => {
     switch (message.role) {
       case "user":
         return { user: text(message.content) };
-      case "custom":
-        return { remoteInput: text(message.content as never) };
+      case "custom": {
+        const author = (message.details as { author?: string } | undefined)?.author;
+        return { remoteInput: text(message.content as never), ...(author ? { author } : {}) };
+      }
       case "assistant":
         return {
           assistant: message.content.map(block =>
@@ -169,7 +177,7 @@ test("a Pi prompt runs in the durable session and Pi shows its turns and tool ca
   const entries = (await world.root.entries({}, 100, undefined, context)).items
     .toSorted((a, b) => Number(a.id) - Number(b.id))
     .map(entry => entry.kind);
-  assert.deepEqual(entries.filter(kind => kind !== "pi.system"), ["pi.user", "pi.assistant", "pi.tool-result", "pi.assistant"]);
+  assert.deepEqual(entries.filter(kind => kind !== "pi.system"), [MESSAGE_KIND, "pi.assistant", "pi.tool-result", "pi.assistant"]);
 });
 
 test("input from another client shows up in Pi and Pi follows the run", async () => {
@@ -186,7 +194,7 @@ test("input from another client shows up in Pi and Pi follows the run", async ()
     { assistant: ["Hello from the phone's question."], stop: "stop" },
   ]);
   // Pi did not submit the input a second time.
-  const users = (await world.root.entries({}, 100, undefined, context)).items.filter(entry => entry.kind === "pi.user");
+  const users = (await world.root.entries({}, 100, undefined, context)).items.filter(entry => entry.kind === "pi.user" || entry.kind === MESSAGE_KIND);
   assert.equal(users.length, 1);
 });
 
@@ -230,7 +238,7 @@ test("a steer typed in Pi while the remote run works reaches its next turn", asy
     { user: "use b instead" },
     { assistant: ["Switching to b."], stop: "stop" },
   ]);
-  const users = (await world.root.entries({}, 100, undefined, context)).items.filter(entry => entry.kind === "pi.user");
+  const users = (await world.root.entries({}, 100, undefined, context)).items.filter(entry => entry.kind === "pi.user" || entry.kind === MESSAGE_KIND);
   assert.equal(users.length, 2, "the steer was submitted once");
 });
 
@@ -277,11 +285,33 @@ test("Pi reconnects after the host restarts", async () => {
   await world.pi.prompt("one");
   const socketPath = world.host.socketPath;
   await world.host.close();
-  world.host = await serveConversation(world.harness, world.root, socketPath);
+  world.host = await serveConversation(world.harness, world.root, socketPath, { agentName: "pal" });
 
   await world.pi.prompt("two");
 
   assert.deepEqual(transcript(world.pi).slice(-2), [{ user: "two" }, { assistant: ["after"], stop: "stop" }]);
+});
+
+test("every message says who wrote it: the model sees the author, and Pi shows other clients' names", async () => {
+  let seen = "";
+  respond(context => {
+    seen = JSON.stringify(context.messages.filter(m => m.role === "user").map(m => m.content));
+    return fauxAssistantMessage("Hi both.");
+  });
+  const bob = await connectConversation(world.host.socketPath);
+  assert.equal(bob.session.agent, "pal");
+  await bob.submit("bob-1", "bob", "hello pal", "followUp");
+  await waitUntil(() => world.pi.messages.some(m => m.role === "assistant"));
+  await world.pi.waitForIdle();
+  bob.close();
+
+  assert.match(seen, /bob: hello pal/, "the model sees who is asking");
+  assert.deepEqual(transcript(world.pi), [
+    { remoteInput: "hello pal", author: "bob" },
+    { assistant: ["Hi both."], stop: "stop" },
+  ]);
+  const placed = (await world.root.entries({}, 100, undefined, context)).items.find(entry => entry.kind === MESSAGE_KIND);
+  assert.deepEqual(placed?.data, { author: "bob", text: "hello pal" });
 });
 
 async function waitUntil(condition: () => boolean, timeoutMs = 5_000): Promise<void> {

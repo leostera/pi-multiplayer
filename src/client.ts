@@ -2,19 +2,26 @@
 
 import { connect, type Socket } from "node:net";
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable";
-import { lineSplitter, type ClientRequest, type Delivery, type HostMessage, type SubmitResult } from "./protocol.ts";
+import {
+  lineSplitter,
+  type ClientRequest,
+  type Delivery,
+  type HostMessage,
+  type SessionInfo,
+  type SubmitResult,
+} from "./protocol.ts";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 export interface RemoteConversation {
   readonly snapshot: SnapshotEvent;
-  /** The tools the conversation offered when this client attached. */
-  readonly tools: readonly string[];
+  /** The agent, its model, and its tools when this client attached. */
+  readonly session: SessionInfo;
   /** Receives every batch of events committed after the snapshot, in order. */
   onEvents(listener: (events: readonly AgentEvent[]) => void): () => void;
   /** Called once when the connection is lost or closed. */
   onClose(listener: () => void): void;
-  submit(requestId: string, content: string, whenBusy: Delivery): Promise<SubmitResult>;
+  submit(requestId: string, author: string, content: string, whenBusy: Delivery): Promise<SubmitResult>;
   abort(): Promise<void>;
   close(): void;
 }
@@ -28,7 +35,7 @@ export async function connectConversation(socketPath: string): Promise<RemoteCon
   const early: (readonly AgentEvent[])[] = [];
   let nextId = 1;
 
-  let tools: string[] = [];
+  let session: SessionInfo = { agent: "agent", model: "unknown", tools: [] };
   const snapshot = await new Promise<SnapshotEvent>((resolve, reject) => {
     socket.once("error", reject);
     socket.on(
@@ -37,7 +44,7 @@ export async function connectConversation(socketPath: string): Promise<RemoteCon
         const message = JSON.parse(line) as HostMessage;
         switch (message.type) {
           case "snapshot":
-            tools = message.tools;
+            session = message.session;
             resolve(message.snapshot);
             break;
           case "events":
@@ -71,7 +78,7 @@ export async function connectConversation(socketPath: string): Promise<RemoteCon
 
   return {
     snapshot,
-    tools,
+    session,
     onEvents(listener) {
       listeners.add(listener);
       for (const batch of early.splice(0)) listener(batch);
@@ -81,7 +88,8 @@ export async function connectConversation(socketPath: string): Promise<RemoteCon
       if (socket.destroyed) listener();
       else closeListeners.push(listener);
     },
-    submit: (requestId, content, whenBusy) => request<SubmitResult>({ op: "submit", requestId, content, whenBusy }),
+    submit: (requestId, author, content, whenBusy) =>
+      request<SubmitResult>({ op: "submit", requestId, author, content, whenBusy }),
     abort: () => request<void>({ op: "abort" }),
     close: () => socket.destroy(),
   };

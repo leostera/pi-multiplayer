@@ -88,7 +88,18 @@ async function run(
     await mirror.abort().catch(() => {});
     return fail("aborted", "Aborted");
   }
-  if ("ended" in next) return fail("error", next.ended);
+  if ("ended" in next) {
+    // Pi asked again after the remote run had answered, with nothing new to send (another
+    // client's message reached Pi after the answer to it): there is nothing to show.
+    if (inputs.length === 0 && !mirror.closed) {
+      output.stopReason = "stop";
+      stream.push({ type: "start", partial: output });
+      stream.push({ type: "done", reason: "stop", message: output });
+      stream.end(output);
+      return;
+    }
+    return fail("error", next.ended);
+  }
 
   stream.push({ type: "start", partial: output });
   const emitter = new TurnEmitter(stream, output);

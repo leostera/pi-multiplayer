@@ -12,7 +12,14 @@ import { createServer, type Server, type Socket } from "node:net";
 import { rmSync } from "node:fs";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { watchEvents, type Conversation, type Harness } from "@earendil-works/pi-durable";
-import { lineSplitter, type ClientRequest, type HostMessage } from "./protocol.ts";
+import {
+  lineSplitter,
+  MESSAGE_KIND,
+  type ClientRequest,
+  type HostMessage,
+  type MessageData,
+  type SessionInfo,
+} from "./protocol.ts";
 
 export interface DurableHost {
   readonly socketPath: string;
@@ -20,6 +27,8 @@ export interface DurableHost {
 }
 
 export interface HostOptions {
+  /** The agent's display name. Default `agent`. */
+  agentName?: string;
   /** Receives a line for each client connection, request, and reply. */
   log?: (line: string) => void;
 }
@@ -37,7 +46,7 @@ export async function serveConversation(
     connections.add(socket);
     const client = ++clients;
     options.log?.(`client ${client} connected`);
-    void attach(harness, conversation, socket, client, options.log).finally(() => {
+    void attach(harness, conversation, socket, client, options).finally(() => {
       connections.delete(socket);
       options.log?.(`client ${client} disconnected`);
     });
@@ -61,15 +70,20 @@ async function attach(
   conversation: Conversation,
   socket: Socket,
   client: number,
-  log?: (line: string) => void,
+  options: HostOptions,
 ): Promise<void> {
+  const log = options.log;
   const send = (message: HostMessage) => {
     if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
   };
   const stream = await watchEvents(harness, conversation.id, context);
   const agent = await conversation.agent(context);
-  const tools = [...agent.tools, ...agent.deferred].map(tool => tool.name);
-  send({ type: "snapshot", snapshot: stream.snapshot, tools });
+  const session: SessionInfo = {
+    agent: options.agentName ?? "agent",
+    model: agent.model ? `${agent.model.provider}/${agent.model.modelId}` : "unknown",
+    tools: [...agent.tools, ...agent.deferred].map(tool => tool.name),
+  };
+  send({ type: "snapshot", snapshot: stream.snapshot, session });
   stream.start(async events => send({ type: "events", events }));
 
   socket.on(
@@ -100,15 +114,22 @@ async function attach(
 function describe(request: ClientRequest): string {
   if (request.op === "abort") return "abort";
   const text = request.content.replace(/\s+/g, " ").trim();
-  return `submit (${request.whenBusy} if busy) ${JSON.stringify(text.length > 120 ? `${text.slice(0, 120)}…` : text)} ${request.requestId}`;
+  return `submit from ${request.author} (${request.whenBusy} if busy) ${JSON.stringify(text.length > 120 ? `${text.slice(0, 120)}…` : text)} ${request.requestId}`;
 }
 
 async function handle(conversation: Conversation, request: ClientRequest) {
   switch (request.op) {
     case "submit": {
       // An idle conversation starts a run; a busy one places the input as `whenBusy` says.
+      const data: MessageData = { author: request.author, text: request.content };
       const submission = await conversation.submit(
-        { type: "input", requestId: request.requestId, content: request.content, whenBusy: request.whenBusy },
+        {
+          type: "input",
+          requestId: request.requestId,
+          content: `${request.author}: ${request.content}`,
+          entry: { kind: MESSAGE_KIND, data: { ...data } },
+          whenBusy: request.whenBusy,
+        },
         context,
       );
       return { submissionId: Number(submission.id) };

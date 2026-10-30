@@ -11,10 +11,19 @@
  * - input placed into the conversation by someone else (another client) is shown in Pi and
  *   starts a Pi turn, so Pi follows runs it did not start.
  *
- * Enable it with `PI_DURABLE_SOCKET=<path> pi -e <this file>`.
+ * In a shared session every message says who wrote it: each user message is headed by its
+ * author and each assistant message by the agent's name.
+ *
+ * Enable it with `PI_DURABLE_SOCKET=<path> [PI_DURABLE_USER=<name>] pi -e <this file>`.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { userInfo } from "node:os";
+import {
+  getMarkdownTheme,
+  UserMessageComponent,
+  type ExtensionAPI,
+  type ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { connectConversation } from "./client.ts";
 import { Mirror } from "./mirror.ts";
@@ -28,14 +37,25 @@ const KNOWN_TOOLS = ["read", "bash", "edit", "write"];
 
 export interface DurableClientOptions {
   socketPath?: string;
+  /** Who this Pi submits as. Default: `PI_DURABLE_USER`, else the OS user name. */
+  author?: string;
+}
+
+interface RemoteInputDetails {
+  author?: string;
 }
 
 export function createDurableClientExtension(options: DurableClientOptions = {}) {
   return (pi: ExtensionAPI) => {
     const socketPath = options.socketPath ?? process.env.PI_DURABLE_SOCKET;
+    const author = options.author ?? process.env.PI_DURABLE_USER ?? userInfo().username;
+    // The heading of assistant messages; until connected the agent has no name of its own.
+    let agentHeading = "**agent**";
     let connecting: Promise<Mirror> | undefined;
     let mirror: Mirror | undefined;
     let busy = false;
+    // Stand-in tools Pi is running: while any is, Pi is in a tool round.
+    let toolsRunning = 0;
     // A Pi turn was requested (by `sendMessage`) and has not started yet.
     let triggered = false;
     const echoes: string[] = [];
@@ -45,7 +65,8 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
       if (!socketPath) return Promise.reject(new Error("set PI_DURABLE_SOCKET to the durable session's socket"));
       connecting ??= connectConversation(socketPath).then(
         remote => {
-          mirror = new Mirror(remote);
+          mirror = new Mirror(remote, author);
+          agentHeading = `**${remote.session.agent}** · _${remote.session.model}_`;
           // A lost connection is reopened by the next request; the conversation's state is the
           // host's, so nothing here needs to survive it.
           remote.onClose(() => {
@@ -53,16 +74,20 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
             mirror = undefined;
           });
           // Stand-ins are fixed for each Pi run, so register one for every remote tool up front.
-          remote.tools.forEach(registerStandIn);
-          mirror.onForeignInput = ({ text }) => {
+          remote.session.tools.forEach(registerStandIn);
+          mirror.onForeignInput = ({ author: from, text }) => {
             // Shown in Pi's transcript, and sent to the provider as a user message the remote
             // conversation already has; `echoes` keeps the provider from submitting it again.
             echoes.push(text);
             if (!busy) triggered = true;
-            pi.sendMessage(
-              { customType: REMOTE_INPUT, content: text, display: true, details: undefined },
-              busy ? { triggerTurn: true, deliverAs: "steer" } : { triggerTurn: true },
-            );
+            // Idle, it starts a Pi turn that follows the run it started. In a tool round, it is
+            // a steer the remote conversation placed after that round: Pi delivers it there too
+            // (the stand-ins hold the round open until the remote one is over). Otherwise Pi is
+            // streaming a turn: show it after that turn without asking for another one.
+            const message = { customType: REMOTE_INPUT, content: text, display: true, details: { author: from } satisfies RemoteInputDetails };
+            if (!busy) pi.sendMessage(message, { triggerTurn: true });
+            else if (toolsRunning > 0) pi.sendMessage(message, { triggerTurn: true, deliverAs: "steer" });
+            else pi.sendMessage(message, { triggerTurn: false });
           };
           // The remote conversation went on after Pi's loop ended (a steer it placed after the
           // final answer, a follow-up, a hook that continued the run): start a Pi turn to show it.
@@ -89,6 +114,7 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
         async execute(toolCallId, _params, signal, onUpdate) {
           const current = await connectMirror();
           const tool = current.tool(toolCallId);
+          toolsRunning++;
           try {
             await new Promise<void>((resolve, reject) => {
               const update = () => {
@@ -105,10 +131,12 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
               signal?.addEventListener("abort", onAbort, { once: true });
               update();
             });
+            await current.roundEnded(tool);
           } catch (error) {
             await current.abort().catch(() => {});
             throw error;
           } finally {
+            toolsRunning--;
             current.forgetTool(toolCallId);
           }
           if (!tool.result) {
@@ -119,6 +147,18 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
       });
     };
     for (const name of KNOWN_TOOLS) registerStandIn(name);
+
+    // Pi's own messages are this user's; every assistant message is the agent's.
+    pi.registerMarkdownTransformer((markdown, context) => {
+      if (context.messageType === "user") return `**${author}**\n\n${markdown}`;
+      if (context.messageType === "assistant") return `${agentHeading}\n\n${markdown}`;
+      return markdown;
+    });
+    // Someone else's message, drawn like a user message under their name.
+    pi.registerMessageRenderer<RemoteInputDetails>(REMOTE_INPUT, (message, { outputPad }) => {
+      const content = typeof message.content === "string" ? message.content : message.content.map(part => (part.type === "text" ? part.text : "")).join("");
+      return new UserMessageComponent(`**${message.details?.author ?? "someone"}**\n\n${content}`, getMarkdownTheme(), outputPad);
+    });
 
     pi.registerProvider(PROVIDER, {
       name: "Durable session",

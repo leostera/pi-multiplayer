@@ -1,11 +1,11 @@
 /**
  * Runs a durable session host for manual testing:
  *
- *   npx tsx bin/host.ts --socket /tmp/pdc.sock --db /tmp/pdc.sqlite [--cwd DIR] [--model provider/id] [--raw]
+ *   npx tsx bin/host.ts --socket /tmp/pdc.sock --db /tmp/pdc.sqlite [--cwd DIR] [--model provider/id] [--name NAME] [--raw]
  *
  * then, in another terminal:
  *
- *   PI_DURABLE_SOCKET=/tmp/pdc.sock pi -e ./src/extension.ts
+ *   PI_DURABLE_SOCKET=/tmp/pdc.sock PI_DURABLE_USER=alice pi -e ./src/extension.ts
  *
  * Models and credentials come from your Pi setup (settings, auth.json, models.json, and the
  * providers your Pi extensions register), so whatever model `pi` uses works here too. The
@@ -19,7 +19,7 @@
 import { parseArgs } from "node:util";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
-import { Harness, createRegistry, watchEvents } from "@earendil-works/pi-durable";
+import { Harness, createRegistry, defineExtension, section, watchEvents } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
@@ -32,6 +32,7 @@ const { values } = parseArgs({
     db: { type: "string", default: "/tmp/pi-durable.sqlite" },
     cwd: { type: "string", default: process.cwd() },
     model: { type: "string" },
+    name: { type: "string", default: "agent" },
     raw: { type: "boolean", default: false },
   },
 });
@@ -54,6 +55,18 @@ if (!model) throw new Error("no model: pass --model provider/id or configure a d
 
 const registry = createRegistry();
 registry.install(CodingTools);
+registry.install(
+  defineExtension({
+    name: "shared-session",
+    sections: [
+      section(
+        "shared-session",
+        () =>
+          `You are ${values.name}. Several people may share this session from different clients. Each user message starts with its author's name ("alice: ..."); address people by name when it helps, and keep track of who asked for what.`,
+      ),
+    ],
+  }),
+);
 const harness = await Harness.open(
   await openNodeSqliteStorage(values.db!),
   {
@@ -73,7 +86,7 @@ trace([watch.snapshot]);
 watch.start(async events => trace(events));
 
 harness.resume();
-const host = await serveConversation(harness, root, values.socket!, { log: line => log(dim(line)) });
+const host = await serveConversation(harness, root, values.socket!, { agentName: values.name, log: line => log(dim(line)) });
 log(`durable session on ${host.socketPath} (${model.provider}/${model.id}, ${values.db}, cwd ${cwd})`);
 
 const stop = async () => {

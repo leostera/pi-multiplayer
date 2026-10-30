@@ -14,7 +14,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent, EntryRecord, MessageChange, SubmissionRecord } from "@earendil-works/pi-durable";
 import type { RemoteConversation } from "./client.ts";
-import type { Delivery } from "./protocol.ts";
+import { MESSAGE_KIND, type Delivery, type MessageData } from "./protocol.ts";
 
 type Listener = () => void;
 
@@ -58,12 +58,16 @@ export class RemoteTool {
   details: unknown;
   /** Set once the call ended; `result` is absent when it ended without one (faulted, orphaned). */
   ended = false;
+  /** The mirror's round count when the call ended (see `Mirror.roundEnded`). */
+  endedInRound = 0;
   result?: ToolResultMessage;
 }
 
 export type NextTurn = { turn: RemoteTurn } | { ended: string };
 
 export interface ForeignInput {
+  /** Who wrote it; absent for a client that does not say. */
+  author?: string;
   text: string;
 }
 
@@ -77,18 +81,23 @@ export class Mirror {
   /** Request ids this client submitted that are not settled yet. */
   readonly #outstanding = new Set<string>();
   readonly #own = new Set<string>();
-  readonly #userText = new Map<number, string>();
+  readonly #inputs = new Map<number, ForeignInput>();
+  /** Who this client submits as. */
+  readonly author: string;
   #lastFailure?: string;
   #closed = false;
+  /** Counts turn starts and run ends: the points by which a tool round's steers are placed. */
+  #round = 0;
   /** Called when someone else (another client) places input into the conversation. */
   onForeignInput?: (input: ForeignInput) => void;
   /** Called when a remote assistant turn starts and is queued for Pi. */
   onTurnQueued?: () => void;
 
-  constructor(remote: RemoteConversation) {
+  constructor(remote: RemoteConversation, author: string) {
     this.#remote = remote;
+    this.author = author;
     this.#running = remote.snapshot.run !== undefined;
-    for (const entry of remote.snapshot.entries) this.#rememberUserText(entry);
+    for (const entry of remote.snapshot.entries) this.#rememberInput(entry);
     remote.onEvents(events => {
       for (const event of events) this.#apply(event);
       this.#changed.notify();
@@ -118,6 +127,10 @@ export class Mirror {
     return this.#closed;
   }
 
+  get session() {
+    return this.#remote.session;
+  }
+
   get running(): boolean {
     return this.#running;
   }
@@ -127,7 +140,7 @@ export class Mirror {
     this.#outstanding.add(requestId);
     this.#lastFailure = undefined;
     try {
-      await this.#remote.submit(requestId, content, whenBusy);
+      await this.#remote.submit(requestId, this.author, content, whenBusy);
     } catch (error) {
       this.#outstanding.delete(requestId);
       throw error;
@@ -185,6 +198,24 @@ export class Mirror {
     return tool;
   }
 
+  /**
+   * Resolves once the tool round that `tool` belonged to is over on the remote side: the next
+   * turn started or the run ended. Inputs placed after that round (steers) are known by then,
+   * so Pi can show them before its next request, where the remote conversation put them.
+   */
+  roundEnded(tool: RemoteTool): Promise<void> {
+    return new Promise(resolve => {
+      const check = () => {
+        if (this.#closed || this.#round > tool.endedInRound) {
+          unsubscribe();
+          resolve();
+        }
+      };
+      const unsubscribe = this.#changed.subscribe(check);
+      check();
+    });
+  }
+
   forgetTool(toolCallId: string): void {
     this.#tools.delete(toolCallId);
   }
@@ -196,6 +227,10 @@ export class Mirror {
         break;
       case "run_end":
         this.#running = false;
+        this.#round++;
+        break;
+      case "turn_start":
+        this.#round++;
         break;
       case "message_start":
         if (event.message.role === "assistant") {
@@ -208,7 +243,7 @@ export class Mirror {
         this.#current?.apply(event.changes);
         break;
       case "message_end":
-        this.#rememberUserText(event.entry);
+        this.#rememberInput(event.entry);
         if (event.entry.kind === "pi.assistant" && this.#current) {
           const message = event.entry.model?.find(m => m.role === "assistant");
           if (message) this.#current.finish(message);
@@ -232,6 +267,7 @@ export class Mirror {
         if (event.parentToolCallId !== undefined) break;
         const tool = this.tool(event.toolCallId);
         tool.ended = true;
+        tool.endedInRound = this.#round;
         tool.result = event.entry?.model?.find((m): m is ToolResultMessage => m.role === "toolResult");
         tool.changed.notify();
         break;
@@ -253,15 +289,19 @@ export class Mirror {
       return;
     }
     if (record.status === "placed") {
-      const text = this.#userText.get(Number(record.entry));
-      if (text !== undefined) this.onForeignInput?.({ text });
+      const input = this.#inputs.get(Number(record.entry));
+      if (input !== undefined) this.onForeignInput?.(input);
     }
   }
 
-  #rememberUserText(entry: EntryRecord): void {
+  #rememberInput(entry: EntryRecord): void {
+    if (entry.kind === MESSAGE_KIND) {
+      const data = entry.data as unknown as MessageData;
+      this.#inputs.set(Number(entry.id), { author: data.author, text: data.text });
+      return;
+    }
     const user = entry.model?.find(m => m.role === "user");
-    if (!user) return;
-    this.#userText.set(Number(entry.id), userText(user.content));
+    if (user) this.#inputs.set(Number(entry.id), { text: userText(user.content) });
   }
 }
 
