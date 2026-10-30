@@ -19,16 +19,28 @@ export interface DurableHost {
   close(): Promise<void>;
 }
 
+export interface HostOptions {
+  /** Receives a line for each client connection, request, and reply. */
+  log?: (line: string) => void;
+}
+
 export async function serveConversation(
   harness: Harness,
   conversation: Conversation,
   socketPath: string,
+  options: HostOptions = {},
 ): Promise<DurableHost> {
+  let clients = 0;
   rmSync(socketPath, { force: true });
   const connections = new Set<Socket>();
   const server: Server = createServer(socket => {
     connections.add(socket);
-    void attach(harness, conversation, socket).finally(() => connections.delete(socket));
+    const client = ++clients;
+    options.log?.(`client ${client} connected`);
+    void attach(harness, conversation, socket, client, options.log).finally(() => {
+      connections.delete(socket);
+      options.log?.(`client ${client} disconnected`);
+    });
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -44,7 +56,13 @@ export async function serveConversation(
   };
 }
 
-async function attach(harness: Harness, conversation: Conversation, socket: Socket): Promise<void> {
+async function attach(
+  harness: Harness,
+  conversation: Conversation,
+  socket: Socket,
+  client: number,
+  log?: (line: string) => void,
+): Promise<void> {
   const send = (message: HostMessage) => {
     if (!socket.destroyed) socket.write(`${JSON.stringify(message)}\n`);
   };
@@ -58,10 +76,17 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
     "data",
     lineSplitter(line => {
       const request = JSON.parse(line) as ClientRequest;
+      log?.(`client ${client} → ${describe(request)}`);
       void handle(conversation, request).then(
-        result => send({ type: "reply", id: request.id, ok: true, result }),
-        (error: unknown) =>
-          send({ type: "reply", id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) }),
+        result => {
+          log?.(`client ${client} ← ${request.op} ok${result ? ` (submission #${result.submissionId})` : ""}`);
+          send({ type: "reply", id: request.id, ok: true, result });
+        },
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          log?.(`client ${client} ← ${request.op} failed: ${message}`);
+          send({ type: "reply", id: request.id, ok: false, error: message });
+        },
       );
     }),
   );
@@ -70,6 +95,12 @@ async function attach(harness: Harness, conversation: Conversation, socket: Sock
     socket.once("error", () => resolve());
   });
   await stream.stop();
+}
+
+function describe(request: ClientRequest): string {
+  if (request.op === "abort") return "abort";
+  const text = request.content.replace(/\s+/g, " ").trim();
+  return `submit (${request.whenBusy} if busy) ${JSON.stringify(text.length > 120 ? `${text.slice(0, 120)}…` : text)} ${request.requestId}`;
 }
 
 async function handle(conversation: Conversation, request: ClientRequest) {

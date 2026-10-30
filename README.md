@@ -24,6 +24,16 @@ PI_DURABLE_SOCKET=/tmp/pdc.sock pi -e ./src/extension.ts
 
 The host takes models and credentials from your Pi setup, including providers that your Pi extensions register.
 
+As it runs, the host prints what it's doing:
+
+- client connections and requests
+- runs and turns
+- what the model says and which tools it calls
+- each tool's output as it streams
+- how each submission is placed and settled
+
+Add `--raw` to also print every agent event as JSON.
+
 ## Tests
 
 `npm test` runs Pi (through its SDK) against a durable host that uses a faux model. The tests cover:
