@@ -43,7 +43,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
   const author = options.author ?? process.env.USER ?? "someone";
   const log = options.log ?? (() => {});
   const remote = await connectConversation(options.target, options);
-  const sessionId = `pi-multiplayer:${sessionName(options.target)}`;
+  const sessionId = sessionName(options.target);
 
   const entries = new Map<number, EntryRecord>();
   const written = new Set<string>();
@@ -70,7 +70,7 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     const file_ = await readShared(file);
     if (file_) {
       for (const record of file_.records) shared.set(record.id, record);
-      for (const record of newPeerRecords(file_, written)) {
+      for (const record of newPeerRecords(file_, sessionId, written)) {
         written.add(record.id);
         const peer = peerFromRecord(record, agent, author);
         if (!peer) continue;

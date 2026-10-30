@@ -12,7 +12,11 @@ import { contentText } from "@leostera/atxf";
 import type { EntryRecord } from "@earendil-works/pi-durable";
 import { MESSAGE_KIND, PEER_KIND, type MessageData, type PeerData } from "@pi-multiplayer/protocol";
 
-export const RECORD_PREFIX = "pm-";
+/**
+ * Ids of the records a session projects to. They name the session too: OpenCode imports record
+ * ids as message ids, which are unique across all its sessions.
+ */
+export const recordPrefix = (sessionId: string) => `pm-${sessionId}-`;
 
 export interface ProjectOptions {
   /** Names the transcript; the same session always projects to the same id. */
@@ -25,16 +29,28 @@ export interface ProjectOptions {
 
 export function project(entries: readonly EntryRecord[], options: ProjectOptions): Transcript {
   const records: AtxfRecord[] = [];
+  const emitted = new Set<string>();
   let parentId: string | null = null;
   let firstTime: string | undefined;
   const add = (record: AtxfRecord) => {
     records.push(record);
+    emitted.add(record.id);
     parentId = record.id;
     firstTime ??= record.time;
   };
+  /** Another agent's record, with the records of its branch this copy lacks (its settings, say), unchanged. */
+  const addOriginal = (record: AtxfRecord) => {
+    const branch: AtxfRecord[] = [];
+    for (let at: AtxfRecord | undefined = record; at && !emitted.has(at.id); ) {
+      branch.unshift(at);
+      const parent: string | null | undefined = "parentId" in at ? at.parentId : undefined;
+      at = parent ? options.shared.get(parent) : undefined;
+    }
+    branch.forEach(add);
+  };
 
   for (const entry of entries) {
-    const id = `${RECORD_PREFIX}${entry.id}`;
+    const id = `${recordPrefix(options.sessionId)}${entry.id}`;
     const message = entry.model?.[0];
     const time = new Date(message && "timestamp" in message && typeof message.timestamp === "number" ? message.timestamp : 0).toISOString();
 
@@ -42,7 +58,7 @@ export function project(entries: readonly EntryRecord[], options: ProjectOptions
       const peer = entry.data as unknown as PeerData;
       const original = peer.atxfId === undefined ? undefined : options.shared.get(peer.atxfId);
       // Its own record, unchanged, keeps its key; it may sit on another branch of the file.
-      if (original) add(original);
+      if (original) addOriginal(original);
       continue;
     }
     if (entry.kind === MESSAGE_KIND) {
@@ -94,7 +110,7 @@ export function project(entries: readonly EntryRecord[], options: ProjectOptions
     header: {
       type: "transcript",
       atxf: "0.1",
-      id: options.sessionId,
+      id: `pi-multiplayer:${options.sessionId}`,
       time: firstTime ?? new Date(0).toISOString(),
       title: `pi-multiplayer: ${options.sessionId}`,
       source: { agent: "pi-multiplayer" },
@@ -111,11 +127,12 @@ function userText(content: string | readonly { type: string; text?: string }[]):
  * The message records of the shared file that the session does not have, in file order: not
  * projected from it, and not written into it before.
  */
-export function newPeerRecords(shared: Transcript, known: ReadonlySet<string>): MessageRecord[] {
+export function newPeerRecords(shared: Transcript, sessionId: string, known: ReadonlySet<string>): MessageRecord[] {
+  const ours = recordPrefix(sessionId);
   return shared.records.filter(
     (record): record is MessageRecord =>
       record.type === "message" &&
-      !record.id.startsWith(RECORD_PREFIX) &&
+      !record.id.startsWith(ours) &&
       !known.has(record.id) &&
       record.role !== "system" &&
       record.display !== false,

@@ -13,7 +13,7 @@
   "vars": {
     // The Access team domain and the application's AUD tag; the Worker refuses everything without them.
     "ACCESS_TEAM_DOMAIN": "cf-lostera-individual-account.cloudflareaccess.com",
-    "ACCESS_AUD": "",
+    "ACCESS_AUD": "6044613f08b7bc11b8da53a48785f65251b2e08f053a6287ab0841fe1d4757a5",
     "AI_GATEWAY": "default",
     "MODEL": "@cf/moonshotai/kimi-k2.6",
     "AGENT_NAME": "kimi"

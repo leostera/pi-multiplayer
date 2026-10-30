@@ -54,8 +54,10 @@ async function opencodeTakesATurn(question: string, answer: string): Promise<voi
   const local = opencode.toAtxf(opencode.fromAtxf(shared));
   const leaf = local.records.at(-1)!.id;
   const time = new Date().toISOString();
+  // OpenCode records its model switch before the turn: a record the session has no entry for.
   const turn: EntryRecord[] = [
-    { type: "message", id: `oc-u-${question.length}`, time, parentId: leaf, role: "user", content: question },
+    { type: "settings", id: `oc-s-${question.length}`, time, parentId: leaf, model: { provider: "openai", id: "gpt" } },
+    { type: "message", id: `oc-u-${question.length}`, time, parentId: `oc-s-${question.length}`, role: "user", content: question },
     { type: "message", id: `oc-a-${answer.length}`, time, parentId: `oc-u-${question.length}`, role: "assistant", content: [{ type: "text", text: answer }], origin: { kind: "model" } },
   ];
   await push(file, { ...local, records: [...local.records, ...turn] });
