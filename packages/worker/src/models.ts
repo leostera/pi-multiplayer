@@ -39,7 +39,7 @@ export function workersAiModels(access: ModelAccess, modelId: string): SessionMo
       provider: PROVIDER,
       baseUrl: `https://workers-binding.ai/ai-gateway/gateways/${access.gateway}/workers-ai/v1`,
     };
-    const fetch = createAiBindingFetch(access.binding);
+    const fetch = gatewayFetch(createAiBindingFetch(access.binding));
     models.setProvider(
       createProvider({
         id: PROVIDER,
@@ -72,4 +72,20 @@ export function workersAiModels(access: ModelAccess, modelId: string): SessionMo
     }),
   );
   return { models, model };
+}
+
+/**
+ * Requests over the binding authenticate as the binding. The API's own `Authorization` (its
+ * placeholder key) must not reach the gateway, which would take it for a provider key that
+ * overrides its stored ones; Workers AI then answers 401. Provider-level header nulls do not
+ * remove it, so it is removed here, on every request.
+ */
+function gatewayFetch(fetch: typeof globalThis.fetch): typeof globalThis.fetch {
+  return (input, init) => {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    headers.delete("authorization");
+    headers.delete("x-api-key");
+    headers.set("cf-aig-authorization", `Bearer ${CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL}`);
+    return fetch(input, { ...init, headers });
+  };
 }
