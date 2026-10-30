@@ -13,8 +13,8 @@
 
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent, EntryRecord, MessageChange, SubmissionRecord } from "@earendil-works/pi-durable";
-import type { RemoteConversation } from "./client.ts";
-import { MESSAGE_KIND, type Delivery, type MessageData } from "./protocol.ts";
+import type { RemoteConversation } from "@pi-multiplayer/client";
+import { MESSAGE_KIND, type Delivery, type MessageData } from "@pi-multiplayer/protocol";
 
 type Listener = () => void;
 

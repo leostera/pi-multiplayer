@@ -1,0 +1,13 @@
+{
+  "name": "@pi-multiplayer/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The wire between pi-multiplayer clients and a session server",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-durable": "1.4.0"
+  }
+}

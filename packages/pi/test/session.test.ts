@@ -25,9 +25,9 @@ import {
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { serveConversation, type DurableHost } from "../src/host.ts";
-import { connectConversation } from "../src/client.ts";
-import { MESSAGE_KIND } from "../src/protocol.ts";
+import { serveConversation, type DurableHost } from "@pi-multiplayer/server/node";
+import { connectConversation } from "@pi-multiplayer/client";
+import { MESSAGE_KIND } from "@pi-multiplayer/protocol";
 import { createDurableClientExtension, MODEL, PROVIDER } from "../src/extension.ts";
 
 interface World {

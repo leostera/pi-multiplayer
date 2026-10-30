@@ -25,7 +25,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { connectConversation } from "./client.ts";
+import { connectConversation } from "@pi-multiplayer/client";
 import { Mirror } from "./mirror.ts";
 import { durableStreamSimple } from "./provider.ts";
 

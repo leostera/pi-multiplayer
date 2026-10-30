@@ -23,7 +23,7 @@ import { Harness, createRegistry, defineExtension, section, watchEvents } from "
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
-import { serveConversation } from "../src/host.ts";
+import { serveConversation } from "../src/node-host.ts";
 import { dim, logLine, traceEvents } from "../src/log.ts";
 
 const { values } = parseArgs({

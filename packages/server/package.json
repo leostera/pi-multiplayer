@@ -1,0 +1,22 @@
+{
+  "name": "@pi-multiplayer/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Serve one pi-durable conversation to many clients; a Node host on a Unix socket",
+  "exports": {
+    ".": "./src/server.ts",
+    "./node": "./src/node-host.ts",
+    "./log": "./src/log.ts"
+  },
+  "bin": {
+    "pi-multiplayer-host": "./bin/host.ts"
+  },
+  "dependencies": {
+    "@pi-multiplayer/protocol": "workspace:*",
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0"
+  }
+}

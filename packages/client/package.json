@@ -1,0 +1,14 @@
+{
+  "name": "@pi-multiplayer/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Connect to a pi-multiplayer session over a Unix socket or a WebSocket (through Cloudflare Access)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@pi-multiplayer/protocol": "workspace:*",
+    "@earendil-works/pi-durable": "1.4.0"
+  }
+}
