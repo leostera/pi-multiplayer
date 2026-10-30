@@ -5,7 +5,7 @@
  * events. Requests map one to one onto the conversation: `submit` is an input (starting a run
  * when idle, steering or following up a busy one), `abort` stops the conversation.
  *
- * In Axo this is the part that becomes the session Durable Object.
+ * Hosted elsewhere (a Cloudflare Durable Object, say), this is the part that moves.
  */
 
 import { createServer, type Server, type Socket } from "node:net";

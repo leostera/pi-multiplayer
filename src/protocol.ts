@@ -5,7 +5,7 @@
  * and receives the conversation's agent events (`watchEvents`) as they are committed. Nothing is
  * sent to the client that the host has not already stored.
  *
- * For the spike this runs over a Unix socket; in Axo it would be a WebSocket to a Durable Object.
+ * It runs over a Unix socket here; a WebSocket would carry it just as well.
  */
 
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable";
@@ -34,7 +34,7 @@ export interface SessionInfo {
  * Inputs are placed as this entry kind, with who wrote them. The model sees `author: text`, so
  * in a shared session it knows who is asking.
  */
-export const MESSAGE_KIND = "axo.message";
+export const MESSAGE_KIND = "multiplayer.message";
 export interface MessageData {
   author: string;
   text: string;

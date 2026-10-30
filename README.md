@@ -1,6 +1,8 @@
-# pi-durable-client (spike)
+# pi-multiplayer
 
-A Pi extension that makes Pi a client of a [pi-durable](https://www.npmjs.com/package/@earendil-works/pi-durable) session. Pi keeps its terminal UI, editor, queues and Esc. The agent, meaning the model turns, the tool calls and the transcript, runs in the durable session.
+> Experimental.
+
+A Pi extension that makes Pi a client of a [pi-durable](https://www.npmjs.com/package/@earendil-works/pi-durable) session. Several Pi clients can share one session. Pi keeps its terminal UI, editor, queues and Esc. The agent, meaning the model turns, the tool calls and the transcript, runs in the durable session.
 
 ## How it works
 
@@ -13,7 +15,7 @@ Pi's agent loop asks for one assistant message, runs that message's tool calls, 
 - **Several people can share one session.** Any number of Pi clients can connect to the same host. A steer from another person shows up in every window where the host placed it: the stand-in tools keep Pi's tool round open until the host's round is over.
 - **The mirror** (`src/mirror.ts`) queues remote turns and tool results, keyed by call id, so the provider and the stand-ins can take them whenever Pi asks.
 
-The wire (`src/protocol.ts`) is JSON lines over a Unix socket: a snapshot plus the tool names, then `watchEvents` batches, plus `submit` and `abort`. In Axo this would be a WebSocket to a session Durable Object.
+The wire (`src/protocol.ts`) is JSON lines over a Unix socket: a snapshot plus the session's agent name, model and tools, then `watchEvents` batches, plus `submit` and `abort`. The same protocol could run over a WebSocket, for example to a Cloudflare Durable Object that holds the session.
 
 ## Try it
 
@@ -53,7 +55,7 @@ Add `--raw` to also print every agent event as JSON.
 
 ## Known gaps
 
-- **History on attach.** Pi shows only what happens after it connects. To catch up, project the conversation's entries into a Pi session file and open it (the same pi/3 projection RFD0018 needs).
+- **History on attach.** Pi shows only what happens after it connects. To catch up, project the conversation's entries into a Pi session file and open it.
 - **Runs that continue while Pi is disconnected.** After a reconnect, Pi doesn't show what it missed (same fix).
 - **Pi's local commands.** `/compact`, `/model`, `/tree` and `/fork` act on Pi's own copy of the transcript. They need durable counterparts.
 - **Tools added mid-run.** The tools available in a Pi run are fixed when the run starts. A tool the conversation gains during a run shows as "not found" in Pi for that run, while the remote call still runs.
