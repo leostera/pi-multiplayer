@@ -84,7 +84,7 @@ beforeEach(async () => {
   const resourceLoader = new DefaultResourceLoader({
     cwd: dir,
     agentDir,
-    extensionFactories: [createDurableClientExtension({ socketPath: host.socketPath, author: "alice" })],
+    extensionFactories: [createDurableClientExtension({ target: host.socketPath, author: "alice" })],
     noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
@@ -312,6 +312,27 @@ test("every message says who wrote it: the model sees the author, and Pi shows o
   ]);
   const placed = (await world.root.entries({}, 100, undefined, context)).items.find(entry => entry.kind === MESSAGE_KIND);
   assert.deepEqual(placed?.data, { author: "bob", text: "hello pal" });
+});
+
+test("another agent's messages are context for the model and show in Pi under their names, without a run", async () => {
+  let seen = "";
+  respond(context => {
+    seen = JSON.stringify(context.messages.filter(m => m.role === "user").map(m => m.content));
+    return fauxAssistantMessage("Noted.");
+  });
+  const bridge = await connectConversation(world.host.socketPath);
+  await bridge.write("oc-1", { agent: "opencode", author: "carol", role: "user", text: "what does main.ts do?", atxfId: "r1" });
+  await bridge.write("oc-2", { agent: "opencode", author: "opencode", role: "assistant", text: "It starts the server.", atxfId: "r2" });
+  await waitUntil(() => world.pi.sessionManager.getEntries().filter(e => e.type === "custom").length === 2);
+  assert.equal(world.pi.messages.filter(m => m.role === "assistant").length, 0, "writes start no run");
+
+  await world.pi.prompt("thanks, summarise what opencode said");
+  bridge.close();
+
+  assert.match(seen, /carol \(in opencode\): what does main.ts do\?/);
+  assert.match(seen, /opencode, another agent in this session, replied/);
+  const peers = world.pi.sessionManager.getEntries().filter(e => e.type === "custom").map(e => (e as { data?: { author: string; text: string } }).data);
+  assert.deepEqual(peers.map(p => [p?.author, p?.text]), [["carol", "what does main.ts do?"], ["opencode", "It starts the server."]]);
 });
 
 async function waitUntil(condition: () => boolean, timeoutMs = 5_000): Promise<void> {

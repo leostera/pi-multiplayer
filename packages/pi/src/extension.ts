@@ -14,7 +14,12 @@
  * In a shared session every message says who wrote it: each user message is headed by its
  * author and each assistant message by the agent's name.
  *
- * Enable it with `PI_DURABLE_SOCKET=<path> pi -e <this file>`. Messages are signed with `$USER`.
+ * Another agent's messages (an OpenCode session joined through the ATXF bridge) show under
+ * that agent's name too.
+ *
+ * It does nothing unless Pi is started with `--multiplayer <target>`: a session URL
+ * (`wss://…/s/<name>`, through Cloudflare Access) or a socket path. Messages are signed with the
+ * name the server gives you (your Access identity), else `$USER`.
  */
 
 import { userInfo } from "node:os";
@@ -26,17 +31,21 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { connectConversation } from "@pi-multiplayer/client";
+import type { PeerData } from "@pi-multiplayer/protocol";
 import { Mirror } from "./mirror.ts";
 import { durableStreamSimple } from "./provider.ts";
 
 export const PROVIDER = "durable";
 export const MODEL = "session";
+export const FLAG = "multiplayer";
 const REMOTE_INPUT = "durable-remote-input";
+const PEER_ENTRY = "multiplayer-peer";
 // Registered before connecting, so the session starts with Pi's built-ins replaced.
 const KNOWN_TOOLS = ["read", "bash", "edit", "write"];
 
 export interface DurableClientOptions {
-  socketPath?: string;
+  /** The session to join; default: the `--multiplayer` flag. */
+  target?: string;
   /** Who this Pi submits as. Default: `$USER`, else the OS user name. */
   author?: string;
 }
@@ -47,8 +56,9 @@ interface RemoteInputDetails {
 
 export function createDurableClientExtension(options: DurableClientOptions = {}) {
   return (pi: ExtensionAPI) => {
-    const socketPath = options.socketPath ?? process.env.PI_DURABLE_SOCKET;
-    const author = options.author ?? process.env.USER ?? userInfo().username;
+    pi.registerFlag(FLAG, { type: "string", description: "Join a pi-multiplayer session: its URL or socket path" });
+    let target: string | undefined;
+    let author = options.author ?? process.env.USER ?? userInfo().username;
     // The heading of assistant messages; until connected the agent has no name of its own.
     let agentHeading = "**agent**";
     let connecting: Promise<Mirror> | undefined;
@@ -62,9 +72,11 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
     const registered = new Set<string>();
 
     const connectMirror = (): Promise<Mirror> => {
-      if (!socketPath) return Promise.reject(new Error("set PI_DURABLE_SOCKET to the durable session's socket"));
-      connecting ??= connectConversation(socketPath).then(
+      if (!target) return Promise.reject(new Error(`start Pi with --${FLAG} <session URL or socket>`));
+      connecting ??= connectConversation(target).then(
         remote => {
+          // The server knows who you are (Cloudflare Access) and signs your messages with it.
+          author = remote.session.you ?? author;
           mirror = new Mirror(remote, author);
           agentHeading = `**${remote.session.agent}** · _${remote.session.model}_`;
           // A lost connection is reopened by the next request; the conversation's state is the
@@ -92,6 +104,8 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
           // The remote conversation went on after Pi's loop ended (a steer it placed after the
           // final answer, a follow-up, a hook that continued the run): start a Pi turn to show it.
           mirror.onTurnQueued = () => followRemote();
+          // Another agent's message: shown under its author, kept out of Pi's model context.
+          mirror.onPeerMessage = peer => pi.appendEntry<PeerData>(PEER_ENTRY, peer);
           return mirror;
         },
         error => {
@@ -146,10 +160,9 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
         },
       });
     };
-    for (const name of KNOWN_TOOLS) registerStandIn(name);
-
     // Pi's own messages are this user's; every assistant message is the agent's.
     pi.registerMarkdownTransformer((markdown, context) => {
+      if (!target) return markdown;
       if (context.messageType === "user") return `**${author}**\n\n${markdown}`;
       if (context.messageType === "assistant") return `${agentHeading}\n\n${markdown}`;
       return markdown;
@@ -159,8 +172,19 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
       const content = typeof message.content === "string" ? message.content : message.content.map(part => (part.type === "text" ? part.text : "")).join("");
       return new UserMessageComponent(`**${message.details?.author ?? "someone"}**\n\n${content}`, getMarkdownTheme(), outputPad);
     });
+    // Another agent's message: its author (a person, or the agent itself) and the agent.
+    pi.registerEntryRenderer<PeerData>(PEER_ENTRY, (entry, { expanded }) => {
+      const peer = entry.data;
+      if (!peer) return undefined;
+      const heading =
+        peer.role === "user" ? `**${peer.author}** · _via ${peer.agent}_`
+        : peer.role === "assistant" ? `**${peer.agent}** · _another agent_`
+        : `**${peer.agent}** · _tool result_`;
+      const text = peer.role === "tool" && !expanded && peer.text.length > 400 ? `${peer.text.slice(0, 400)}…` : peer.text;
+      return new UserMessageComponent(`${heading}\n\n${text}`, getMarkdownTheme(), 1);
+    });
 
-    pi.registerProvider(PROVIDER, {
+    const registerProvider = () => pi.registerProvider(PROVIDER, {
       name: "Durable session",
       baseUrl: "durable://session",
       apiKey: "unused",
@@ -197,7 +221,7 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
     // it places them by its own rules; Pi still queues and shows them, and the provider does not
     // send them again when Pi delivers them.
     pi.on("input", async event => {
-      if (event.streamingBehavior === undefined || event.source === "extension") return { action: "continue" };
+      if (!target || event.streamingBehavior === undefined || event.source === "extension") return { action: "continue" };
       const current = await connectMirror();
       echoes.push(event.text);
       await current.submit(`pi:${event.streamingBehavior}:${Date.now()}:${Math.random().toString(36).slice(2)}`, event.text, event.streamingBehavior);
@@ -212,10 +236,14 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
       followRemote();
     });
     pi.on("session_start", async (_event, ctx: ExtensionContext) => {
+      target = options.target ?? (pi.getFlag(FLAG) as string | undefined);
+      if (!target) return;
+      registerProvider();
+      for (const name of KNOWN_TOOLS) registerStandIn(name);
       const model = ctx.modelRegistry.find(PROVIDER, MODEL);
       if (model && ctx.model?.provider !== PROVIDER) await pi.setModel(model);
       // Connect now so input from other clients shows up before the first prompt.
-      await connectMirror().catch(error => ctx.ui.notify(`Durable session: ${error.message}`, "error"));
+      await connectMirror().catch(error => ctx.ui.notify(`pi-multiplayer: ${error.message}`, "error"));
     });
     pi.on("session_shutdown", () => {
       mirror?.close();

@@ -14,7 +14,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent, EntryRecord, MessageChange, SubmissionRecord } from "@earendil-works/pi-durable";
 import type { RemoteConversation } from "@pi-multiplayer/client";
-import { MESSAGE_KIND, type Delivery, type MessageData } from "@pi-multiplayer/protocol";
+import { MESSAGE_KIND, PEER_KIND, type Delivery, type MessageData, type PeerData } from "@pi-multiplayer/protocol";
 
 type Listener = () => void;
 
@@ -92,6 +92,8 @@ export class Mirror {
   onForeignInput?: (input: ForeignInput) => void;
   /** Called when a remote assistant turn starts and is queued for Pi. */
   onTurnQueued?: () => void;
+  /** Called for each message another agent (OpenCode, through ATXF) added to the conversation. */
+  onPeerMessage?: (peer: PeerData) => void;
 
   constructor(remote: RemoteConversation, author: string) {
     this.#remote = remote;
@@ -244,9 +246,16 @@ export class Mirror {
         break;
       case "message_end":
         this.#rememberInput(event.entry);
-        if (event.entry.kind === "pi.assistant" && this.#current) {
-          const message = event.entry.model?.find(m => m.role === "assistant");
-          if (message) this.#current.finish(message);
+        if (event.entry.kind === PEER_KIND) this.onPeerMessage?.(event.entry.data as unknown as PeerData);
+        if (this.#current && !this.#current.final) {
+          if (event.entry.kind === "pi.assistant") {
+            const message = event.entry.model?.find(m => m.role === "assistant");
+            if (message) this.#current.finish(message);
+          } else if (event.entry.model?.[0]?.role === "assistant") {
+            // An assistant message committed by something other than a generation: not a turn
+            // of this conversation's agent, so not Pi's to answer with.
+            this.#turns.splice(this.#turns.indexOf(this.#current), 1);
+          }
           this.#current = undefined;
         }
         break;
