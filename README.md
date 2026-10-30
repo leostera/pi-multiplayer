@@ -11,7 +11,7 @@ Pi's agent loop asks for one assistant message, runs that message's tool calls, 
 - **The `durable` provider** (`src/provider.ts`) answers each Pi model request with the conversation's next assistant turn. It first sends the user messages Pi added since the last answer: the prompt, plus steers and follow-ups that reach it this way. Text and thinking stream as deltas; each tool call is sent once its block is complete.
 - **Stand-in tools** take the names of the conversation's tools (`bash`, `read`, …). They do no work: each waits for the remote result of the call with the same id and streams its output in the meantime. Because they replace the built-ins by name, Pi's built-in renderers still draw them.
 - **Input from other clients** (for example the iPhone) appears in Pi as a `durable-remote-input` message and starts a Pi turn, so Pi shows runs it didn't start. Steers and follow-ups typed while Pi is busy go to the conversation immediately, and the conversation places them.
-- **Names on every message.** Each user message is headed by its author (`PI_DURABLE_USER`, otherwise your OS user name). Each assistant message is headed by the agent's name and model (the host's `--name`). The model sees each message as `alice: …`, so it knows who is asking.
+- **Names on every message.** Each user message is headed by its author: your `$USER`. Each assistant message is headed by the agent's name and model (the host's `--name`). The model sees each message as `alice: …`, so it knows who is asking.
 - **Several people can share one session.** Any number of Pi clients can connect to the same host. A steer from another person shows up in every window where the host placed it: the stand-in tools keep Pi's tool round open until the host's round is over.
 - **The mirror** (`src/mirror.ts`) queues remote turns and tool results, keyed by call id, so the provider and the stand-ins can take them whenever Pi asks.
 
@@ -22,9 +22,10 @@ The wire (`src/protocol.ts`) is JSON lines over a Unix socket: a snapshot plus t
 ```sh
 npm install
 npx tsx bin/host.ts --socket /tmp/pdc.sock --db /tmp/pdc.sqlite --cwd ~/some/repo --model opencode-cf/claude-haiku-5-5 --name haiku
-# one terminal per person
-PI_DURABLE_SOCKET=/tmp/pdc.sock PI_DURABLE_USER=alice pi -e ./src/extension.ts
-PI_DURABLE_SOCKET=/tmp/pdc.sock PI_DURABLE_USER=bob pi -e ./src/extension.ts
+# one terminal per person; messages are signed with $USER
+PI_DURABLE_SOCKET=/tmp/pdc.sock pi -e ./src/extension.ts
+# to try two people on one machine, give the second one another name
+USER=bob PI_DURABLE_SOCKET=/tmp/pdc.sock pi -e ./src/extension.ts
 ```
 
 The host takes models and credentials from your Pi setup, including providers that your Pi extensions register.

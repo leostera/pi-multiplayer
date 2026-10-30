@@ -14,7 +14,7 @@
  * In a shared session every message says who wrote it: each user message is headed by its
  * author and each assistant message by the agent's name.
  *
- * Enable it with `PI_DURABLE_SOCKET=<path> [PI_DURABLE_USER=<name>] pi -e <this file>`.
+ * Enable it with `PI_DURABLE_SOCKET=<path> pi -e <this file>`. Messages are signed with `$USER`.
  */
 
 import { userInfo } from "node:os";
@@ -37,7 +37,7 @@ const KNOWN_TOOLS = ["read", "bash", "edit", "write"];
 
 export interface DurableClientOptions {
   socketPath?: string;
-  /** Who this Pi submits as. Default: `PI_DURABLE_USER`, else the OS user name. */
+  /** Who this Pi submits as. Default: `$USER`, else the OS user name. */
   author?: string;
 }
 
@@ -48,7 +48,7 @@ interface RemoteInputDetails {
 export function createDurableClientExtension(options: DurableClientOptions = {}) {
   return (pi: ExtensionAPI) => {
     const socketPath = options.socketPath ?? process.env.PI_DURABLE_SOCKET;
-    const author = options.author ?? process.env.PI_DURABLE_USER ?? userInfo().username;
+    const author = options.author ?? process.env.USER ?? userInfo().username;
     // The heading of assistant messages; until connected the agent has no name of its own.
     let agentHeading = "**agent**";
     let connecting: Promise<Mirror> | undefined;

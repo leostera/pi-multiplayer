@@ -5,7 +5,7 @@
  *
  * then, in another terminal:
  *
- *   PI_DURABLE_SOCKET=/tmp/pdc.sock PI_DURABLE_USER=alice pi -e ./src/extension.ts
+ *   PI_DURABLE_SOCKET=/tmp/pdc.sock pi -e ./src/extension.ts
  *
  * Models and credentials come from your Pi setup (settings, auth.json, models.json, and the
  * providers your Pi extensions register), so whatever model `pi` uses works here too. The
