@@ -105,6 +105,14 @@ The `local` environment has no Access (it only answers on localhost) and calls W
 
 The Worker re-verifies every request's Access JWT (signature, issuer, audience, expiry) and fails closed without a valid configuration. It only admits `@cloudflare.com` people (`personFromEmail` in `src/access.ts`): service tokens are refused, since every message is somebody's. `workers_dev` and preview URLs are off, because they would sidestep Access. The model is called through AI Gateway (`AI_GATEWAY`, `default` by default) over the AI binding, so there are no API keys to manage.
 
+## Design and specs
+
+[RFD0001](docs/rfds/RFD0001-shared-sessions.md) records the design: the wire, signing, the Worker, the Pi extension, the bridge, failure semantics, and what is still open. Its invariants are [Feynman](https://feynman.leostera.dev) specs in [`specs/`](specs): `bun run specs` model-checks them, and `bunx feynman dev` opens each one in a simulator.
+
+- [`joining`](specs/joining.ts): Access, the Worker's own check, and who signs each message.
+- [`shared-session`](specs/shared-session.ts): attaching, placing input, reconnecting and retrying.
+- [`opencode-bridge`](specs/opencode-bridge.ts): the bridge, the shared file and OpenCode's pulls, including a known bug in ATXF's OpenCode converter.
+
 ## How the Pi extension works
 
 Pi's agent loop asks for one assistant message, runs its tool calls, and asks again. A durable conversation produces the same sequence on its own. The extension lines the two up:

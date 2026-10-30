@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "sources": {
+    "packages/atxf/src/bridge.ts#startBridge": "a04256e49f7d",
+    "packages/atxf/src/bridge.ts:51-58": "b3d6c082ce10",
+    "packages/atxf/src/bridge.ts:69-84": "1bfe0b8a0c10",
+    "packages/atxf/src/bridge.ts:86-96": "975e5c905fb9",
+    "packages/atxf/src/bridge.ts:97-99": "603ca18ed6ab",
+    "packages/atxf/src/project.ts#newPeerRecords": "acc218857800",
+    "packages/atxf/src/project.ts#project": "90a5778e2a1e",
+    "packages/client/src/index.ts#accessToken": "152023c8a7c4",
+    "packages/client/src/index.ts#connectConversation": "b409d5f2ff1f",
+    "packages/client/src/index.ts#openWebSocket": "2215753b2d82",
+    "packages/pi/src/extension.ts#createDurableClientExtension": "884c1f18e547",
+    "packages/pi/src/mirror.ts#Mirror": "48ed15da0d56",
+    "packages/pi/src/mirror.ts#Mirror.submit": "1089e3f06191",
+    "packages/pi/src/provider.ts#durableStreamSimple": "1ada92baef74",
+    "packages/server/src/server.ts#SessionServer.#handle": "314d7e39d120",
+    "packages/server/src/server.ts#SessionServer.attach": "8937912abec3",
+    "packages/server/src/server.ts:80-109": "4fa767e98f13",
+    "packages/worker/src/access.ts#checkAccess": "d991af244cc1",
+    "packages/worker/src/index.ts#PiSession.fetch": "04cdaf145fae",
+    "packages/worker/src/index.ts:62-81": "6bc14942669d",
+    "packages/worker/src/models.ts#workersAiModels": "c26153a855b4"
+  }
+}
