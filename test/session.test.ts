@@ -272,6 +272,18 @@ test("a follow-up another client queues during Pi's run is shown and answered af
   ]);
 });
 
+test("Pi reconnects after the host restarts", async () => {
+  respond(fauxAssistantMessage("before"), fauxAssistantMessage("after"));
+  await world.pi.prompt("one");
+  const socketPath = world.host.socketPath;
+  await world.host.close();
+  world.host = await serveConversation(world.harness, world.root, socketPath);
+
+  await world.pi.prompt("two");
+
+  assert.deepEqual(transcript(world.pi).slice(-2), [{ user: "two" }, { assistant: ["after"], stop: "stop" }]);
+});
+
 async function waitUntil(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
   const start = Date.now();
   while (!condition()) {

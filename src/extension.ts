@@ -46,6 +46,12 @@ export function createDurableClientExtension(options: DurableClientOptions = {})
       connecting ??= connectConversation(socketPath).then(
         remote => {
           mirror = new Mirror(remote);
+          // A lost connection is reopened by the next request; the conversation's state is the
+          // host's, so nothing here needs to survive it.
+          remote.onClose(() => {
+            connecting = undefined;
+            mirror = undefined;
+          });
           // Stand-ins are fixed for each Pi run, so register one for every remote tool up front.
           remote.tools.forEach(registerStandIn);
           mirror.onForeignInput = ({ text }) => {

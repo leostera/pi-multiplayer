@@ -65,13 +65,22 @@ async function run(
   };
 
   let mirror: Mirror;
-  try {
+  const inputs = newInputs(context.messages, options.echoes);
+  const send = async () => {
     mirror = await options.mirror();
-    for (const input of newInputs(context.messages, options.echoes)) await mirror.submit(input.requestId, input.text);
+    for (const input of inputs) await mirror.submit(input.requestId, input.text);
+  };
+  try {
+    // A connection found dead on use is opened again once; request ids make resending safe.
+    await send().catch(async error => {
+      if (!mirror?.closed) throw error;
+      await send();
+    });
   } catch (error) {
     return fail("error", `Could not reach the durable session: ${errorText(error)}`);
   }
 
+  mirror = mirror!;
   let next;
   try {
     next = await mirror.nextTurn(signal);

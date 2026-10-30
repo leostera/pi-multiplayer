@@ -79,6 +79,7 @@ export class Mirror {
   readonly #own = new Set<string>();
   readonly #userText = new Map<number, string>();
   #lastFailure?: string;
+  #closed = false;
   /** Called when someone else (another client) places input into the conversation. */
   onForeignInput?: (input: ForeignInput) => void;
   /** Called when a remote assistant turn starts and is queued for Pi. */
@@ -92,6 +93,16 @@ export class Mirror {
       for (const event of events) this.#apply(event);
       this.#changed.notify();
     });
+    remote.onClose(() => {
+      this.#closed = true;
+      // Pi's waits end: the turn being streamed and every tool call still running.
+      this.#current?.finish({ ...this.#current.message, stopReason: "error", errorMessage: "Lost the durable session connection." });
+      for (const tool of this.#tools.values()) {
+        tool.ended = true;
+        tool.changed.notify();
+      }
+      this.#changed.notify();
+    });
   }
 
   close(): void {
@@ -101,6 +112,10 @@ export class Mirror {
   /** Remote turns no Pi model request has taken yet. */
   get queuedTurns(): number {
     return this.#turns.length;
+  }
+
+  get closed(): boolean {
+    return this.#closed;
   }
 
   get running(): boolean {
@@ -135,6 +150,7 @@ export class Mirror {
       const check = (): boolean => {
         const turn = this.#turns.shift();
         if (turn) return done({ turn });
+        if (this.#closed) return done({ ended: "Lost the durable session connection." });
         if (!this.#running && this.#outstanding.size === 0) {
           return done({ ended: this.#lastFailure ?? "The durable session is idle and produced no answer." });
         }

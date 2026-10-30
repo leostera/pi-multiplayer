@@ -12,6 +12,8 @@ export interface RemoteConversation {
   readonly tools: readonly string[];
   /** Receives every batch of events committed after the snapshot, in order. */
   onEvents(listener: (events: readonly AgentEvent[]) => void): () => void;
+  /** Called once when the connection is lost or closed. */
+  onClose(listener: () => void): void;
   submit(requestId: string, content: string, whenBusy: Delivery): Promise<SubmitResult>;
   abort(): Promise<void>;
   close(): void;
@@ -53,9 +55,11 @@ export async function connectConversation(socketPath: string): Promise<RemoteCon
       }),
     );
   });
+  const closeListeners: (() => void)[] = [];
   socket.on("close", () => {
     for (const waiter of pending.values()) waiter.reject(new Error("durable session connection closed"));
     pending.clear();
+    for (const listener of closeListeners.splice(0)) listener();
   });
 
   const request = <T>(body: DistributiveOmit<ClientRequest, "id">): Promise<T> =>
@@ -72,6 +76,10 @@ export async function connectConversation(socketPath: string): Promise<RemoteCon
       listeners.add(listener);
       for (const batch of early.splice(0)) listener(batch);
       return () => listeners.delete(listener);
+    },
+    onClose: listener => {
+      if (socket.destroyed) listener();
+      else closeListeners.push(listener);
     },
     submit: (requestId, content, whenBusy) => request<SubmitResult>({ op: "submit", requestId, content, whenBusy }),
     abort: () => request<void>({ op: "abort" }),
