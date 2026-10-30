@@ -1,0 +1,23 @@
+{
+  "name": "@pi-multiplayer/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "pi-multiplayer sessions on Cloudflare: a Durable Object per session, behind Cloudflare Access",
+  "scripts": {
+    "dev": "wrangler dev -e local",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types --include-env=false"
+  },
+  "dependencies": {
+    "@pi-multiplayer/protocol": "workspace:*",
+    "@pi-multiplayer/server": "workspace:*",
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "jose": "6.2.14"
+  },
+  "devDependencies": {
+    "wrangler": "4.156.0"
+  }
+}

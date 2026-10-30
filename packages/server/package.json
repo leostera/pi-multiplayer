@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/server.ts",
     "./node": "./src/node-host.ts",
-    "./log": "./src/log.ts"
+    "./log": "./src/log.ts",
+    "./agent": "./src/agent.ts"
   },
   "bin": {
     "pi-multiplayer-host": "./bin/host.ts"

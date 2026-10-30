@@ -1,0 +1,25 @@
+{
+  "name": "@pi-multiplayer/atxf",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bridge a pi-multiplayer session and an ATXF shared file, so OpenCode (and any ATXF agent) can join",
+  "exports": {
+    ".": "./src/bridge.ts",
+    "./project": "./src/project.ts"
+  },
+  "bin": {
+    "pi-multiplayer-atxf": "./bin/atxf.ts"
+  },
+  "dependencies": {
+    "@pi-multiplayer/client": "workspace:*",
+    "@pi-multiplayer/protocol": "workspace:*",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@leostera/atxf": "link:@leostera/atxf"
+  },
+  "devDependencies": {
+    "@pi-multiplayer/server": "workspace:*",
+    "@earendil-works/chord": "1.4.0"
+  }
+}

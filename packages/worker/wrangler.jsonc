@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pi-multiplayer",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Your account and hostname: the Access application in front of the hostname decides who joins.
+  "account_id": "776b37f0f2474156eb01cf93c764b2e9",
+  "routes": [{ "pattern": "pi-multiplayer.lostera.me.cloudflare.dev", "custom_domain": true }],
+  // workers.dev and preview URLs would sidestep Access.
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    // The Access team domain and the application's AUD tag; the Worker refuses everything without them.
+    "ACCESS_TEAM_DOMAIN": "cf-lostera-individual-account.cloudflareaccess.com",
+    "ACCESS_AUD": "",
+    "AI_GATEWAY": "default",
+    "MODEL": "@cf/moonshotai/kimi-k2.6",
+    "AGENT_NAME": "kimi"
+  },
+  "ai": { "binding": "AI" },
+  "durable_objects": { "bindings": [{ "name": "SESSIONS", "class_name": "PiSession" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PiSession"] }],
+  "limits": { "cpu_ms": 300000 },
+  "observability": { "enabled": true },
+  "env": {
+    // `wrangler dev -e local`: no Access (localhost only), and Workers AI over its REST API with
+    // CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID from .dev.vars.
+    "local": {
+      "routes": [],
+      "vars": { "LOCAL_DEV": "1", "AI_GATEWAY": "default", "MODEL": "@cf/moonshotai/kimi-k2.6", "AGENT_NAME": "kimi" },
+      "durable_objects": { "bindings": [{ "name": "SESSIONS", "class_name": "PiSession" }] }
+    }
+  }
+}

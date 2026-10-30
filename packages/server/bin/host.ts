@@ -19,10 +19,11 @@
 import { parseArgs } from "node:util";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
-import { Harness, createRegistry, defineExtension, section, watchEvents } from "@earendil-works/pi-durable";
+import { Harness, createRegistry, watchEvents } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { sharedSession } from "../src/agent.ts";
 import { serveConversation } from "../src/node-host.ts";
 import { dim, logLine, traceEvents } from "../src/log.ts";
 
@@ -55,18 +56,7 @@ if (!model) throw new Error("no model: pass --model provider/id or configure a d
 
 const registry = createRegistry();
 registry.install(CodingTools);
-registry.install(
-  defineExtension({
-    name: "shared-session",
-    sections: [
-      section(
-        "shared-session",
-        () =>
-          `You are ${values.name}. Several people may share this session from different clients. Each user message starts with its author's name ("alice: ..."); address people by name when it helps, and keep track of who asked for what.`,
-      ),
-    ],
-  }),
-);
+registry.install(sharedSession(values.name!));
 const harness = await Harness.open(
   await openNodeSqliteStorage(values.db!),
   {
